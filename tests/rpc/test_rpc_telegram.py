@@ -405,7 +405,7 @@ def test_status_table_handle(default_conf, update, ticker, fee, mocker) -> None:
     assert msg_mock.call_count == 1
 
 
-def test_daily_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
+def test_daily_handle(default_conf_usdt, update, ticker, fee, mocker, time_machine) -> None:
     mocker.patch(
         'freqtrade.rpc.rpc.CryptoToFiatConverter._find_price',
         return_value=1.1
@@ -418,6 +418,8 @@ def test_daily_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
 
     telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf_usdt)
 
+    # Move date to within day
+    time_machine.move_to('2022-06-11 08:00:00+00:00')
     # Create some test data
     create_mock_trades_usdt(fee)
 
@@ -491,7 +493,7 @@ def test_daily_wrong_input(default_conf, update, ticker, mocker) -> None:
     assert 'Daily Profit over the last 7 days</b>:' in msg_mock.call_args_list[0][0][0]
 
 
-def test_weekly_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
+def test_weekly_handle(default_conf_usdt, update, ticker, fee, mocker, time_machine) -> None:
     default_conf_usdt['max_open_trades'] = 1
     mocker.patch(
         'freqtrade.rpc.rpc.CryptoToFiatConverter._find_price',
@@ -504,7 +506,8 @@ def test_weekly_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
     )
 
     telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf_usdt)
-
+    # Move to saturday - so all trades are within that week
+    time_machine.move_to('2022-06-11')
     create_mock_trades_usdt(fee)
 
     # Try valid data
@@ -560,7 +563,7 @@ def test_weekly_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
     )
 
 
-def test_monthly_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
+def test_monthly_handle(default_conf_usdt, update, ticker, fee, mocker, time_machine) -> None:
     default_conf_usdt['max_open_trades'] = 1
     mocker.patch(
         'freqtrade.rpc.rpc.CryptoToFiatConverter._find_price',
@@ -573,7 +576,8 @@ def test_monthly_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
     )
 
     telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf_usdt)
-
+    # Move to day within the month so all mock trades fall into this week.
+    time_machine.move_to('2022-06-11')
     create_mock_trades_usdt(fee)
 
     # Try valid data
@@ -643,16 +647,16 @@ def test_monthly_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
     assert str('Monthly Profit over the last 6 months</b>:') in msg_mock.call_args_list[0][0][0]
 
 
-def test_profit_handle(default_conf, update, ticker, ticker_sell_up, fee,
-                       limit_buy_order, limit_sell_order, mocker) -> None:
-    mocker.patch('freqtrade.rpc.rpc.CryptoToFiatConverter._find_price', return_value=15000.0)
+def test_profit_handle(default_conf_usdt, update, ticker_usdt, ticker_sell_up, fee,
+                       limit_sell_order_usdt, mocker) -> None:
+    mocker.patch('freqtrade.rpc.rpc.CryptoToFiatConverter._find_price', return_value=1.1)
     mocker.patch.multiple(
         'freqtrade.exchange.Exchange',
-        fetch_ticker=ticker,
+        fetch_ticker=ticker_usdt,
         get_fee=fee,
     )
 
-    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf)
+    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf_usdt)
     patch_get_signal(freqtradebot)
 
     telegram._profit(update=update, context=MagicMock())
@@ -664,10 +668,6 @@ def test_profit_handle(default_conf, update, ticker, ticker_sell_up, fee,
     freqtradebot.enter_positions()
     trade = Trade.query.first()
 
-    # Simulate fulfilled LIMIT_BUY order for trade
-    oobj = Order.parse_from_ccxt_object(limit_buy_order, limit_buy_order['symbol'], 'buy')
-    trade.update_trade(oobj)
-
     context = MagicMock()
     # Test with invalid 2nd argument (should silently pass)
     context.args = ["aaa"]
@@ -675,15 +675,16 @@ def test_profit_handle(default_conf, update, ticker, ticker_sell_up, fee,
     assert msg_mock.call_count == 1
     assert 'No closed trade' in msg_mock.call_args_list[-1][0][0]
     assert '*ROI:* All trades' in msg_mock.call_args_list[-1][0][0]
-    mocker.patch('freqtrade.wallets.Wallets.get_starting_balance', return_value=0.01)
-    assert ('∙ `-0.000005 BTC (-0.50%) (-0.0 \N{GREEK CAPITAL LETTER SIGMA}%)`'
+    mocker.patch('freqtrade.wallets.Wallets.get_starting_balance', return_value=1000)
+    assert ('∙ `0.298 USDT (0.50%) (0.03 \N{GREEK CAPITAL LETTER SIGMA}%)`'
             in msg_mock.call_args_list[-1][0][0])
     msg_mock.reset_mock()
 
     # Update the ticker with a market going up
     mocker.patch('freqtrade.exchange.Exchange.fetch_ticker', ticker_sell_up)
     # Simulate fulfilled LIMIT_SELL order for trade
-    oobj = Order.parse_from_ccxt_object(limit_sell_order, limit_sell_order['symbol'], 'sell')
+    oobj = Order.parse_from_ccxt_object(
+        limit_sell_order_usdt, limit_sell_order_usdt['symbol'], 'sell')
     trade.update_trade(oobj)
 
     trade.close_date = datetime.now(timezone.utc)
@@ -694,15 +695,15 @@ def test_profit_handle(default_conf, update, ticker, ticker_sell_up, fee,
     telegram._profit(update=update, context=context)
     assert msg_mock.call_count == 1
     assert '*ROI:* Closed trades' in msg_mock.call_args_list[-1][0][0]
-    assert ('∙ `0.00006217 BTC (6.20%) (0.62 \N{GREEK CAPITAL LETTER SIGMA}%)`'
+    assert ('∙ `5.685 USDT (9.45%) (0.57 \N{GREEK CAPITAL LETTER SIGMA}%)`'
             in msg_mock.call_args_list[-1][0][0])
-    assert '∙ `0.933 USD`' in msg_mock.call_args_list[-1][0][0]
+    assert '∙ `6.253 USD`' in msg_mock.call_args_list[-1][0][0]
     assert '*ROI:* All trades' in msg_mock.call_args_list[-1][0][0]
-    assert ('∙ `0.00006217 BTC (6.20%) (0.62 \N{GREEK CAPITAL LETTER SIGMA}%)`'
+    assert ('∙ `5.685 USDT (9.45%) (0.57 \N{GREEK CAPITAL LETTER SIGMA}%)`'
             in msg_mock.call_args_list[-1][0][0])
-    assert '∙ `0.933 USD`' in msg_mock.call_args_list[-1][0][0]
+    assert '∙ `6.253 USD`' in msg_mock.call_args_list[-1][0][0]
 
-    assert '*Best Performing:* `ETH/BTC: 6.20%`' in msg_mock.call_args_list[-1][0][0]
+    assert '*Best Performing:* `ETH/USDT: 9.45%`' in msg_mock.call_args_list[-1][0][0]
 
 
 @pytest.mark.parametrize('is_short', [True, False])
@@ -1239,71 +1240,43 @@ def test_force_enter_no_pair(default_conf, update, mocker) -> None:
     assert fbuy_mock.call_count == 1
 
 
-def test_telegram_performance_handle(default_conf, update, ticker, fee,
-                                     limit_buy_order, limit_sell_order, mocker) -> None:
+def test_telegram_performance_handle(default_conf_usdt, update, ticker, fee, mocker) -> None:
 
     mocker.patch.multiple(
         'freqtrade.exchange.Exchange',
         fetch_ticker=ticker,
         get_fee=fee,
     )
-    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf)
-    patch_get_signal(freqtradebot)
+    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf_usdt)
 
     # Create some test data
-    freqtradebot.enter_positions()
-    trade = Trade.query.first()
-    assert trade
+    create_mock_trades_usdt(fee)
 
-    # Simulate fulfilled LIMIT_BUY order for trade
-    oobj = Order.parse_from_ccxt_object(limit_buy_order, limit_buy_order['symbol'], 'buy')
-    trade.update_trade(oobj)
-
-    # Simulate fulfilled LIMIT_SELL order for trade
-    oobj = Order.parse_from_ccxt_object(limit_sell_order, limit_sell_order['symbol'], 'sell')
-    trade.update_trade(oobj)
-
-    trade.close_date = datetime.utcnow()
-    trade.is_open = False
     telegram._performance(update=update, context=MagicMock())
     assert msg_mock.call_count == 1
     assert 'Performance' in msg_mock.call_args_list[0][0][0]
-    assert '<code>ETH/BTC\t0.00006217 BTC (6.20%) (1)</code>' in msg_mock.call_args_list[0][0][0]
+    assert '<code>XRP/USDT\t9.842 USDT (10.00%) (1)</code>' in msg_mock.call_args_list[0][0][0]
 
 
 def test_telegram_entry_tag_performance_handle(
-        default_conf, update, ticker, fee, limit_buy_order, limit_sell_order, mocker) -> None:
+        default_conf_usdt, update, ticker, fee, mocker) -> None:
     mocker.patch.multiple(
         'freqtrade.exchange.Exchange',
         fetch_ticker=ticker,
         get_fee=fee,
     )
-    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf)
+    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf_usdt)
     patch_get_signal(freqtradebot)
 
-    # Create some test data
-    freqtradebot.enter_positions()
-    trade = Trade.query.first()
-    assert trade
+    create_mock_trades_usdt(fee)
 
-    # Simulate fulfilled LIMIT_BUY order for trade
-    oobj = Order.parse_from_ccxt_object(limit_buy_order, limit_buy_order['symbol'], 'buy')
-    trade.update_trade(oobj)
-
-    trade.enter_tag = "TESTBUY"
-    # Simulate fulfilled LIMIT_SELL order for trade
-    oobj = Order.parse_from_ccxt_object(limit_sell_order, limit_sell_order['symbol'], 'sell')
-    trade.update_trade(oobj)
-
-    trade.close_date = datetime.utcnow()
-    trade.is_open = False
     context = MagicMock()
     telegram._enter_tag_performance(update=update, context=context)
     assert msg_mock.call_count == 1
     assert 'Entry Tag Performance' in msg_mock.call_args_list[0][0][0]
-    assert '<code>TESTBUY\t0.00006217 BTC (6.20%) (1)</code>' in msg_mock.call_args_list[0][0][0]
+    assert '<code>TEST1\t3.987 USDT (5.00%) (1)</code>' in msg_mock.call_args_list[0][0][0]
 
-    context.args = [trade.pair]
+    context.args = ['XRP/USDT']
     telegram._enter_tag_performance(update=update, context=context)
     assert msg_mock.call_count == 2
 
@@ -1316,37 +1289,24 @@ def test_telegram_entry_tag_performance_handle(
     assert "Error" in msg_mock.call_args_list[0][0][0]
 
 
-def test_telegram_exit_reason_performance_handle(default_conf, update, ticker, fee,
-                                                 limit_buy_order, limit_sell_order, mocker) -> None:
+def test_telegram_exit_reason_performance_handle(default_conf_usdt, update, ticker, fee,
+                                                 mocker) -> None:
     mocker.patch.multiple(
         'freqtrade.exchange.Exchange',
         fetch_ticker=ticker,
         get_fee=fee,
     )
-    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf)
+    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf_usdt)
     patch_get_signal(freqtradebot)
 
-    # Create some test data
-    freqtradebot.enter_positions()
-    trade = Trade.query.first()
-    assert trade
-    trade.exit_reason = 'TESTSELL'
-    # Simulate fulfilled LIMIT_BUY order for trade
-    oobj = Order.parse_from_ccxt_object(limit_buy_order, limit_buy_order['symbol'], 'buy')
-    trade.update_trade(oobj)
+    create_mock_trades_usdt(fee)
 
-    # Simulate fulfilled LIMIT_SELL order for trade
-    oobj = Order.parse_from_ccxt_object(limit_sell_order, limit_sell_order['symbol'], 'sell')
-    trade.update_trade(oobj)
-
-    trade.close_date = datetime.utcnow()
-    trade.is_open = False
     context = MagicMock()
     telegram._exit_reason_performance(update=update, context=context)
     assert msg_mock.call_count == 1
     assert 'Exit Reason Performance' in msg_mock.call_args_list[0][0][0]
-    assert '<code>TESTSELL\t0.00006217 BTC (6.20%) (1)</code>' in msg_mock.call_args_list[0][0][0]
-    context.args = [trade.pair]
+    assert '<code>roi\t9.842 USDT (10.00%) (1)</code>' in msg_mock.call_args_list[0][0][0]
+    context.args = ['XRP/USDT']
 
     telegram._exit_reason_performance(update=update, context=context)
     assert msg_mock.call_count == 2
@@ -1360,43 +1320,27 @@ def test_telegram_exit_reason_performance_handle(default_conf, update, ticker, f
     assert "Error" in msg_mock.call_args_list[0][0][0]
 
 
-def test_telegram_mix_tag_performance_handle(default_conf, update, ticker, fee,
-                                             limit_buy_order, limit_sell_order, mocker) -> None:
+def test_telegram_mix_tag_performance_handle(default_conf_usdt, update, ticker, fee,
+                                             mocker) -> None:
     mocker.patch.multiple(
         'freqtrade.exchange.Exchange',
         fetch_ticker=ticker,
         get_fee=fee,
     )
-    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf)
+    telegram, freqtradebot, msg_mock = get_telegram_testobject(mocker, default_conf_usdt)
     patch_get_signal(freqtradebot)
 
     # Create some test data
-    freqtradebot.enter_positions()
-    trade = Trade.query.first()
-    assert trade
-
-    trade.enter_tag = "TESTBUY"
-    trade.exit_reason = "TESTSELL"
-
-    # Simulate fulfilled LIMIT_BUY order for trade
-    oobj = Order.parse_from_ccxt_object(limit_buy_order, limit_buy_order['symbol'], 'buy')
-    trade.update_trade(oobj)
-
-    # Simulate fulfilled LIMIT_SELL order for trade
-    oobj = Order.parse_from_ccxt_object(limit_sell_order, limit_sell_order['symbol'], 'sell')
-    trade.update_trade(oobj)
-
-    trade.close_date = datetime.utcnow()
-    trade.is_open = False
+    create_mock_trades_usdt(fee)
 
     context = MagicMock()
     telegram._mix_tag_performance(update=update, context=context)
     assert msg_mock.call_count == 1
     assert 'Mix Tag Performance' in msg_mock.call_args_list[0][0][0]
-    assert ('<code>TESTBUY TESTSELL\t0.00006217 BTC (6.20%) (1)</code>'
+    assert ('<code>TEST3 roi\t9.842 USDT (10.00%) (1)</code>'
             in msg_mock.call_args_list[0][0][0])
 
-    context.args = [trade.pair]
+    context.args = ['XRP/USDT']
     telegram._mix_tag_performance(update=update, context=context)
     assert msg_mock.call_count == 2
 
