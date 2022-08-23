@@ -15,6 +15,7 @@ from freqtrade.constants import (DATETIME_PRINT_FORMAT, MATH_CLOSE_PREC, NON_OPE
 from freqtrade.enums import ExitType, TradingMode
 from freqtrade.exceptions import DependencyException, OperationalException
 from freqtrade.exchange import amount_to_precision, price_to_precision
+from freqtrade.exchange.exchange import amount_to_contracts, contracts_to_amount
 from freqtrade.leverage import interest
 from freqtrade.persistence.base import _DECL_BASE
 from freqtrade.util import FtPrecise
@@ -296,6 +297,7 @@ class LocalTrade():
     amount_precision: Optional[float] = None
     price_precision: Optional[float] = None
     precision_mode: Optional[int] = None
+    contract_size: Optional[float] = None
 
     # Leverage trading properties
     liquidation_price: Optional[float] = None
@@ -623,7 +625,11 @@ class LocalTrade():
             else:
                 logger.warning(
                     f'Got different open_order_id {self.open_order_id} != {order.order_id}')
-            amount_tr = amount_to_precision(self.amount, self.amount_precision, self.precision_mode)
+            amount_tr = contracts_to_amount(
+                amount_to_precision(
+                    amount_to_contracts(self.amount, self.contract_size),
+                    self.amount_precision, self.precision_mode),
+                self.contract_size)
             if isclose(order.safe_amount_after_fee, amount_tr, abs_tol=MATH_CLOSE_PREC):
                 self.close(order.safe_price)
             else:
@@ -1142,6 +1148,7 @@ class Trade(_DECL_BASE, LocalTrade):
     amount_precision = Column(Float, nullable=True)
     price_precision = Column(Float, nullable=True)
     precision_mode = Column(Integer, nullable=True)
+    contract_size = Column(Float, nullable=True)
 
     # Leverage trading properties
     leverage = Column(Float, nullable=True, default=1.0)
