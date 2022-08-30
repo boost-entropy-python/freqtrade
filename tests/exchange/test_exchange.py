@@ -5036,22 +5036,22 @@ def test_get_liquidation_price1(mocker, default_conf):
         (True, 'futures', 'binance', 'isolated', 5.0, 10.0, 1.0, 11.89108910891089),
         (True, 'futures', 'binance', 'isolated', 3.0, 10.0, 1.0, 13.211221122079207),
         (True, 'futures', 'binance', 'isolated', 5.0, 8.0, 1.0, 9.514851485148514),
-        (True, 'futures', 'binance', 'isolated', 5.0, 10.0, 0.6, 12.557755775577558),
+        (True, 'futures', 'binance', 'isolated', 5.0, 10.0, 0.6, 11.897689768976898),
         # Binance, long
         (False, 'futures', 'binance', 'isolated', 5, 10, 1.0, 8.070707070707071),
         (False, 'futures', 'binance', 'isolated', 5, 8, 1.0, 6.454545454545454),
-        (False, 'futures', 'binance', 'isolated', 3, 10, 1.0, 6.717171717171718),
-        (False, 'futures', 'binance', 'isolated', 5, 10, 0.6, 7.39057239057239),
+        (False, 'futures', 'binance', 'isolated', 3, 10, 1.0, 6.723905723905723),
+        (False, 'futures', 'binance', 'isolated', 5, 10, 0.6, 8.063973063973064),
         # Gateio/okx, short
         (True, 'futures', 'gateio', 'isolated', 5, 10, 1.0, 11.87413417771621),
         (True, 'futures', 'gateio', 'isolated', 5, 10, 2.0, 11.87413417771621),
-        (True, 'futures', 'gateio', 'isolated', 3, 10, 1.0, 13.476180850346978),
+        (True, 'futures', 'gateio', 'isolated', 3, 10, 1.0, 13.193482419684678),
         (True, 'futures', 'gateio', 'isolated', 5, 8, 1.0, 9.499307342172967),
+        (True, 'futures', 'okx', 'isolated', 3, 10, 1.0, 13.193482419684678),
         # Gateio/okx, long
         (False, 'futures', 'gateio', 'isolated', 5.0, 10.0, 1.0, 8.085708510208207),
         (False, 'futures', 'gateio', 'isolated', 3.0, 10.0, 1.0, 6.738090425173506),
-        # (True, 'futures', 'okx', 'isolated', 11.87413417771621),
-        # (False, 'futures', 'okx', 'isolated', 8.085708510208207),
+        (False, 'futures', 'okx', 'isolated', 3.0, 10.0, 1.0, 6.738090425173506),
     ]
 )
 def test_get_liquidation_price(
@@ -5124,7 +5124,7 @@ def test_get_liquidation_price(
     default_conf_usdt['exchange']['name'] = exchange_name
     default_conf_usdt['margin_mode'] = margin_mode
     mocker.patch('freqtrade.exchange.Gateio.validate_ordertypes')
-    exchange = get_patched_exchange(mocker, default_conf_usdt)
+    exchange = get_patched_exchange(mocker, default_conf_usdt, id=exchange_name)
 
     exchange.get_maintenance_ratio_and_amt = MagicMock(return_value=(0.01, 0.01))
     exchange.name = exchange_name
@@ -5136,6 +5136,7 @@ def test_get_liquidation_price(
         open_rate=open_rate,
         amount=amount,
         stake_amount=amount * open_rate / leverage,
+        wallet_balance=amount * open_rate / leverage,
         # leverage=leverage,
         is_short=is_short,
     )
@@ -5144,7 +5145,7 @@ def test_get_liquidation_price(
     else:
         buffer_amount = liquidation_buffer * abs(open_rate - expected_liq)
         expected_liq = expected_liq - buffer_amount if is_short else expected_liq + buffer_amount
-        isclose(expected_liq, liq)
+        assert isclose(expected_liq, liq)
 
 
 @pytest.mark.parametrize('contract_size,order_amount', [
