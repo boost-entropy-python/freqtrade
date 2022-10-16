@@ -1123,8 +1123,9 @@ class Backtesting:
                     if self.manage_open_orders(t, current_time, row):
                         # Close trade
                         open_trade_count -= 1
+                        open_trade_count_start -= 1
                         open_trades[pair].remove(t)
-                        LocalTrade.trades_open.remove(t)
+                        LocalTrade.remove_bt_trade(t)
                         self.wallets.update()
 
                 # 2. Process entries.
