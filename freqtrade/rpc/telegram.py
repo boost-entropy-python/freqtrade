@@ -25,7 +25,7 @@ from telegram.utils.helpers import escape_markdown
 
 from freqtrade.__init__ import __version__
 from freqtrade.constants import DUST_PER_COIN, Config
-from freqtrade.enums import RPCMessageType, SignalDirection, TradingMode
+from freqtrade.enums import MarketDirection, RPCMessageType, SignalDirection, TradingMode
 from freqtrade.exceptions import OperationalException
 from freqtrade.misc import chunks, plural, round_coin_value
 from freqtrade.persistence import Trade
@@ -129,7 +129,8 @@ class Telegram(RPCHandler):
             r'/weekly$', r'/weekly \d+$', r'/monthly$', r'/monthly \d+$',
             r'/forcebuy$', r'/forcelong$', r'/forceshort$',
             r'/forcesell$', r'/forceexit$',
-            r'/edge$', r'/health$', r'/help$', r'/version$'
+            r'/edge$', r'/health$', r'/help$', r'/version$', r'/marketdir (long|short|even|none)$',
+            r'/marketdir$'
         ]
         # Create keys for generation
         valid_keys_print = [k.replace('$', '') for k in valid_keys]
@@ -197,6 +198,7 @@ class Telegram(RPCHandler):
             CommandHandler('health', self._health),
             CommandHandler('help', self._help),
             CommandHandler('version', self._version),
+            CommandHandler('marketdir', self._changemarketdir)
         ]
         callbacks = [
             CallbackQueryHandler(self._status_table, pattern='update_status_table'),
@@ -560,15 +562,18 @@ class Telegram(RPCHandler):
             r['open_date_hum'] = arrow.get(r['open_date']).humanize()
             r['num_entries'] = len([o for o in r['orders'] if o['ft_is_entry']])
             r['exit_reason'] = r.get('exit_reason', "")
-            r['rounded_stake_amount'] = round_coin_value(r['stake_amount'], r['quote_currency'])
-            r['rounded_profit_abs'] = round_coin_value(r['profit_abs'], r['quote_currency'])
+            r['stake_amount_r'] = round_coin_value(r['stake_amount'], r['quote_currency'])
+            r['profit_abs_r'] = round_coin_value(r['profit_abs'], r['quote_currency'])
+            r['realized_profit_r'] = round_coin_value(r['realized_profit'], r['quote_currency'])
+            r['total_profit_abs_r'] = round_coin_value(
+                r['total_profit_abs'], r['quote_currency'])
             lines = [
                 "*Trade ID:* `{trade_id}`" +
                 (" `(since {open_date_hum})`" if r['is_open'] else ""),
                 "*Current Pair:* {pair}",
-                "*Direction:* " + ("`Short`" if r.get('is_short') else "`Long`"),
-                "*Leverage:* `{leverage}`" if r.get('leverage') else "",
-                "*Amount:* `{amount} ({rounded_stake_amount})`",
+                f"*Direction:* {'`Short`' if r.get('is_short') else '`Long`'}"
+                + " ` ({leverage}x)`" if r.get('leverage') else "",
+                "*Amount:* `{amount} ({stake_amount_r})`",
                 "*Enter Tag:* `{enter_tag}`" if r['enter_tag'] else "",
                 "*Exit Reason:* `{exit_reason}`" if r['exit_reason'] else "",
             ]
@@ -583,13 +588,15 @@ class Telegram(RPCHandler):
                 "*Open Date:* `{open_date}`",
                 "*Close Date:* `{close_date}`" if r['close_date'] else "",
                 "*Current Rate:* `{current_rate:.8f}`" if r['is_open'] else "",
-                ("*Current Profit:* " if r['is_open'] else "*Close Profit: *")
-                + "`{profit_ratio:.2%}` `({rounded_profit_abs})`",
+                ("*Unrealized Profit:* " if r['is_open'] else "*Close Profit: *")
+                + "`{profit_ratio:.2%}` `({profit_abs_r})`",
             ])
 
             if r['is_open']:
                 if r.get('realized_profit'):
-                    lines.append("*Realized Profit:* `{realized_profit:.8f}`")
+                    lines.append("*Realized Profit:* `{realized_profit_r}`")
+                    lines.append("*Total Profit:* `{total_profit_abs_r}` ")
+
                 if (r['stop_loss_abs'] != r['initial_stop_loss_abs']
                         and r['initial_stop_loss_ratio'] is not None):
                     # Adding initial stoploss only if it is different from stoploss
@@ -1502,6 +1509,9 @@ class Telegram(RPCHandler):
             "*/count:* `Show number of active trades compared to allowed number of trades`\n"
             "*/edge:* `Shows validated pairs by Edge if it is enabled` \n"
             "*/health* `Show latest process timestamp - defaults to 1970-01-01 00:00:00` \n"
+            "*/marketdir [long | short | even | none]:* `Updates the user managed variable "
+            "that represents the current market direction. If no direction is provided `"
+            "`the currently set market direction will be output.` \n"
 
             "_Statistics_\n"
             "------------\n"
@@ -1535,7 +1545,7 @@ class Telegram(RPCHandler):
         Handler for /health
         Shows the last process timestamp
         """
-        health = self._rpc._health()
+        health = self._rpc.health()
         message = f"Last process: `{health['last_process_loc']}`"
         self._send_msg(message)
 
@@ -1685,3 +1695,39 @@ class Telegram(RPCHandler):
                 'TelegramError: %s! Giving up on that message.',
                 telegram_err.message
             )
+
+    @authorized_only
+    def _changemarketdir(self, update: Update, context: CallbackContext) -> None:
+        """
+        Handler for /marketdir.
+        Updates the bot's market_direction
+        :param bot: telegram bot
+        :param update: message update
+        :return: None
+        """
+        if context.args and len(context.args) == 1:
+            new_market_dir_arg = context.args[0]
+            old_market_dir = self._rpc._get_market_direction()
+            new_market_dir = None
+            if new_market_dir_arg == "long":
+                new_market_dir = MarketDirection.LONG
+            elif new_market_dir_arg == "short":
+                new_market_dir = MarketDirection.SHORT
+            elif new_market_dir_arg == "even":
+                new_market_dir = MarketDirection.EVEN
+            elif new_market_dir_arg == "none":
+                new_market_dir = MarketDirection.NONE
+
+            if new_market_dir is not None:
+                self._rpc._update_market_direction(new_market_dir)
+                self._send_msg("Successfully updated market direction"
+                               f" from *{old_market_dir}* to *{new_market_dir}*.")
+            else:
+                raise RPCException("Invalid market direction provided. \n"
+                                   "Valid market directions: *long, short, even, none*")
+        elif context.args is not None and len(context.args) == 0:
+            old_market_dir = self._rpc._get_market_direction()
+            self._send_msg(f"Currently set market direction: *{old_market_dir}*")
+        else:
+            raise RPCException("Invalid usage of command /marketdir. \n"
+                               "Usage: */marketdir [short |  long | even | none]*")
