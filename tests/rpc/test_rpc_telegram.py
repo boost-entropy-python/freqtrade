@@ -14,6 +14,7 @@ import arrow
 import pytest
 import time_machine
 from pandas import DataFrame
+from sqlalchemy import select
 from telegram import Chat, Message, ReplyKeyboardMarkup, Update
 from telegram.error import BadRequest, NetworkError, TelegramError
 
@@ -302,8 +303,7 @@ def test_telegram_status_closed_trade(default_conf, update, mocker, fee) -> None
     telegram, _, msg_mock = get_telegram_testobject(mocker, default_conf)
 
     create_mock_trades(fee)
-    trades = Trade.get_trades([Trade.is_open.is_(False)])
-    trade = trades[0]
+    trade = Trade.get_trades([Trade.is_open.is_(False)]).first()
     context = MagicMock()
     context.args = [str(trade.id)]
     telegram._status(update=update, context=context)
@@ -693,7 +693,7 @@ def test_profit_handle(default_conf_usdt, update, ticker_usdt, ticker_sell_up, f
 
     # Create some test data
     freqtradebot.enter_positions()
-    trade = Trade.query.first()
+    trade = Trade.session.scalars(select(Trade)).first()
 
     context = MagicMock()
     # Test with invalid 2nd argument (should silently pass)
@@ -946,7 +946,7 @@ def test_telegram_forceexit_handle(default_conf, update, ticker, fee,
     # Create some test data
     freqtradebot.enter_positions()
 
-    trade = Trade.query.first()
+    trade = Trade.session.scalars(select(Trade)).first()
     assert trade
 
     # Increase the price and sell it
@@ -1021,7 +1021,7 @@ def test_telegram_force_exit_down_handle(default_conf, update, ticker, fee,
         fetch_ticker=ticker_sell_down
     )
 
-    trade = Trade.query.first()
+    trade = Trade.session.scalars(select(Trade)).first()
     assert trade
 
     # /forceexit 1
