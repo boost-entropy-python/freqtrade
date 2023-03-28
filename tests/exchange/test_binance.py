@@ -15,8 +15,8 @@ from tests.exchange.test_exchange import ccxt_exceptionhandlers
     ('buy', 'limit', 'gtc', {'timeInForce': 'GTC'}),
     ('buy', 'limit', 'IOC', {'timeInForce': 'IOC'}),
     ('buy', 'market', 'IOC', {}),
-    ('buy', 'limit', 'PO', {'postOnly': True}),
-    ('sell', 'limit', 'PO', {'postOnly': True}),
+    ('buy', 'limit', 'PO', {'timeInForce': 'PO'}),
+    ('sell', 'limit', 'PO', {'timeInForce': 'PO'}),
     ('sell', 'market', 'PO', {}),
     ])
 def test__get_params_binance(default_conf, mocker, side, type, time_in_force, expected):
@@ -52,7 +52,7 @@ def test_create_stoploss_order_binance(default_conf, mocker, limitratio, expecte
 
     exchange = get_patched_exchange(mocker, default_conf, api_mock, 'binance')
 
-    with pytest.raises(OperationalException):
+    with pytest.raises(InvalidOrderException):
         order = exchange.create_stoploss(
             pair='ETH/BTC',
             amount=1,
@@ -131,7 +131,7 @@ def test_create_stoploss_order_dry_run_binance(default_conf, mocker):
 
     exchange = get_patched_exchange(mocker, default_conf, api_mock, 'binance')
 
-    with pytest.raises(OperationalException):
+    with pytest.raises(InvalidOrderException):
         order = exchange.create_stoploss(
             pair='ETH/BTC',
             amount=1,

@@ -80,6 +80,8 @@ class Exchange:
         "fee_cost_in_contracts": False,  # Fee cost needs contract conversion
         "needs_trading_fees": False,  # use fetch_trading_fees to cache fees
         "order_props_in_contracts": ['amount', 'cost', 'filled', 'remaining'],
+        # Override createMarketBuyOrderRequiresPrice where ccxt has it wrong
+        "marketOrderRequiresPrice": False,
     }
     _ft_has: Dict = {}
     _ft_has_futures: Dict = {}
@@ -205,6 +207,8 @@ class Exchange:
                 and self._api_async.session):
             logger.debug("Closing async ccxt session.")
             self.loop.run_until_complete(self._api_async.close())
+        if self.loop and not self.loop.is_closed():
+            self.loop.close()
 
     def validate_config(self, config):
         # Check if timeframe is available
@@ -1038,6 +1042,13 @@ class Exchange:
             params.update({'reduceOnly': True})
         return params
 
+    def _order_needs_price(self, ordertype: str) -> bool:
+        return (
+            ordertype != 'market'
+            or self._api.options.get("createMarketBuyOrderRequiresPrice", False)
+            or self._ft_has.get('marketOrderRequiresPrice', False)
+        )
+
     def create_order(
         self,
         *,
@@ -1060,8 +1071,7 @@ class Exchange:
         try:
             # Set the precision for amount and price(rate) as accepted by the exchange
             amount = self.amount_to_precision(pair, self._amount_to_contracts(pair, amount))
-            needs_price = (ordertype != 'market'
-                           or self._api.options.get("createMarketBuyOrderRequiresPrice", False))
+            needs_price = self._order_needs_price(ordertype)
             rate_for_order = self.price_to_precision(pair, rate) if needs_price else None
 
             if not reduceOnly:
@@ -1135,7 +1145,11 @@ class Exchange:
                           "sell" else (stop_price >= limit_rate))
         # Ensure rate is less than stop price
         if bad_stop_price:
-            raise OperationalException(
+            # This can for example happen if the stop / liquidation price is set to 0
+            # Which is possible if a market-order closes right away.
+            # The InvalidOrderException will bubble up to exit_positions, where it will be
+            # handled gracefully.
+            raise InvalidOrderException(
                 "In stoploss limit order, stop price should be more than limit price. "
                 f"Stop price: {stop_price}, Limit price: {limit_rate}, "
                 f"Limit Price pct: {limit_price_pct}"
