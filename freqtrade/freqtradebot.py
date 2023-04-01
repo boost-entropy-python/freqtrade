@@ -854,7 +854,8 @@ class FreqtradeBot(LoggingMixin):
                 logger.info(f"Canceling stoploss on exchange for {trade}")
                 co = self.exchange.cancel_stoploss_order_with_result(
                     trade.stoploss_order_id, trade.pair, trade.amount)
-                trade.update_order(co)
+                self.update_trade_state(trade, trade.stoploss_order_id, co, stoploss_order=True)
+
                 # Reset stoploss order id.
                 trade.stoploss_order_id = None
             except InvalidOrderException:
@@ -946,7 +947,7 @@ class FreqtradeBot(LoggingMixin):
 
         return enter_limit_requested, stake_amount, leverage
 
-    def _notify_enter(self, trade: Trade, order: Order, order_type: Optional[str] = None,
+    def _notify_enter(self, trade: Trade, order: Order, order_type: str,
                       fill: bool = False, sub_trade: bool = False) -> None:
         """
         Sends rpc notification when a entry order occurred.
@@ -1172,7 +1173,8 @@ class FreqtradeBot(LoggingMixin):
             logger.warning('Unable to fetch stoploss order: %s', exception)
 
         if stoploss_order:
-            trade.update_order(stoploss_order)
+            self.update_trade_state(trade, trade.stoploss_order_id, stoploss_order,
+                                    stoploss_order=True)
 
         # We check if stoploss order is fulfilled
         if stoploss_order and stoploss_order['status'] in ('closed', 'triggered'):
@@ -1850,7 +1852,7 @@ class FreqtradeBot(LoggingMixin):
                 self.handle_protections(trade.pair, trade.trade_direction)
         elif send_msg and not trade.open_order_id and not stoploss_order:
             # Enter fill
-            self._notify_enter(trade, order, fill=True, sub_trade=sub_trade)
+            self._notify_enter(trade, order, order.order_type, fill=True, sub_trade=sub_trade)
 
     def handle_protections(self, pair: str, side: LongShort) -> None:
         # Lock pair for one candle to prevent immediate rebuys
