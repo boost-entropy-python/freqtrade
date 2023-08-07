@@ -613,6 +613,8 @@ class FreqtradeBot(LoggingMixin):
         for trade in Trade.get_open_trades():
             # If there is any open orders, wait for them to finish.
             if trade.open_order_id is None:
+                # Do a wallets update (will be ratelimited to once per hour)
+                self.wallets.update(False)
                 try:
                     self.check_and_call_adjust_trade_position(trade)
                 except DependencyException as exception:
@@ -1383,7 +1385,10 @@ class FreqtradeBot(LoggingMixin):
         latest_candle_close_date = timeframe_to_next_date(self.strategy.timeframe,
                                                           latest_candle_open_date)
         # Check if new candle
-        if order_obj and latest_candle_close_date > order_obj.order_date_utc:
+        if (
+            order_obj and order_obj.side == trade.entry_side
+            and latest_candle_close_date > order_obj.order_date_utc
+        ):
             # New candle
             proposed_rate = self.exchange.get_rate(
                 trade.pair, side='entry', is_short=trade.is_short, refresh=True)
