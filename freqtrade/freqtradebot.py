@@ -784,7 +784,7 @@ class FreqtradeBot(LoggingMixin):
         order_obj = Order.parse_from_ccxt_object(order, pair, side, amount, enter_limit_requested)
         order_id = order['id']
         order_status = order.get('status')
-        logger.info(f"Order #{order_id} was created for {pair} and status is {order_status}.")
+        logger.info(f"Order {order_id} was created for {pair} and status is {order_status}.")
 
         # we assume the order is executed at the price requested
         enter_limit_filled_price = enter_limit_requested
@@ -1420,6 +1420,13 @@ class FreqtradeBot(LoggingMixin):
                         order_adjust=True,
                     ):
                         logger.warning(f"Could not replace order for {trade}.")
+                        if trade.nr_of_successful_entries == 0:
+                            # this is the first entry and we didn't get filled yet, delete trade
+                            logger.warning(f"Removing {trade} from database.")
+                            self._notify_enter_cancel(
+                                trade, order_type=self.strategy.order_types['entry'],
+                                reason=constants.CANCEL_REASON['REPLACE_FAILED'])
+                            trade.delete()
 
     def cancel_all_open_orders(self) -> None:
         """
