@@ -312,9 +312,9 @@ class FreqtradeBot(LoggingMixin):
         open_trades = Trade.get_open_trade_count()
         return max(0, self.config['max_open_trades'] - open_trades)
 
-    def update_funding_fees(self):
+    def update_funding_fees(self) -> None:
         if self.trading_mode == TradingMode.FUTURES:
-            trades = Trade.get_open_trades()
+            trades: List[Trade] = Trade.get_open_trades()
             try:
                 for trade in trades:
                     funding_fees = self.exchange.get_funding_fees(
@@ -327,7 +327,7 @@ class FreqtradeBot(LoggingMixin):
             except ExchangeError:
                 logger.warning("Could not update funding fees for open trades.")
 
-    def startup_backpopulate_precision(self):
+    def startup_backpopulate_precision(self) -> None:
 
         trades = Trade.get_trades([Trade.contract_size.is_(None)])
         for trade in trades:
@@ -1506,9 +1506,6 @@ class FreqtradeBot(LoggingMixin):
         """
         was_trade_fully_canceled = False
         side = trade.entry_side.capitalize()
-        if not trade.has_open_orders:
-            logger.warning(f"No open order for {trade}.")
-            return False
 
         if order['status'] not in constants.NON_OPEN_EXCHANGE_STATES:
             filled_val: float = order.get('filled', 0.0) or 0.0
@@ -1921,7 +1918,7 @@ class FreqtradeBot(LoggingMixin):
 
         if self.exchange.check_order_canceled_empty(order):
             # Trade has been cancelled on exchange
-            # Handling of this will happen in check_handle_timedout.
+            # Handling of this will happen in handle_cancel_order.
             return True
 
         order_obj_or_none = trade.select_order_by_order_id(order_id)
