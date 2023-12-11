@@ -239,7 +239,7 @@ class Backtesting:
         if self.config.get('freqai', {}).get('enabled', False):
             startup_candle_count = self.freqai_startup_candles
         else:
-            startup_candle_count = self.config['startup_candle_count']
+            startup_candle_count = self.required_startup
 
         data = history.load_data(
             datadir=self.config['datadir'],
@@ -964,7 +964,7 @@ class Backtesting:
 
     def trade_slot_available(self, open_trade_count: int) -> bool:
         # Always allow trades when max_open_trades is enabled.
-        max_open_trades: IntOrInf = self.config['max_open_trades']
+        max_open_trades: IntOrInf = self.strategy.max_open_trades
         if max_open_trades <= 0 or open_trade_count < max_open_trades:
             return True
         # Rejected trade
