@@ -673,20 +673,13 @@ class FreqtradeBot(LoggingMixin):
             amount = self.exchange.amount_to_contract_precision(
                 trade.pair,
                 abs(float(FtPrecise(stake_amount * trade.leverage) / FtPrecise(current_exit_rate))))
-            if amount > trade.amount:
-                # This is currently ineffective as remaining would become < min tradable
-                # Fixing this would require checking for 0.0 there -
-                # if we decide that this callback is allowed to "fully exit"
-                logger.info(
-                    f"Adjusting amount to trade.amount as it is higher. {amount} > {trade.amount}")
-                amount = trade.amount
 
             if amount == 0.0:
                 logger.info("Amount to exit is 0.0 due to exchange limits - not exiting.")
                 return
 
             remaining = (trade.amount - amount) * current_exit_rate
-            if min_exit_stake and remaining < min_exit_stake:
+            if min_exit_stake and remaining != 0 and remaining < min_exit_stake:
                 logger.info(f"Remaining amount of {remaining} would be smaller "
                             f"than the minimum of {min_exit_stake}.")
                 return
@@ -1348,9 +1341,11 @@ class FreqtradeBot(LoggingMixin):
                 not_closed = order['status'] == 'open' or fully_cancelled
 
                 if not_closed:
-                    if fully_cancelled or (
-                        open_order and self.strategy.ft_check_timed_out(
-                            trade, open_order, datetime.now(timezone.utc)
+                    if (
+                        fully_cancelled or (
+                            open_order and self.strategy.ft_check_timed_out(
+                                trade, open_order, datetime.now(timezone.utc)
+                            )
                         )
                     ):
                         self.handle_cancel_order(
@@ -1814,7 +1809,6 @@ class FreqtradeBot(LoggingMixin):
             'profit_ratio': profit.profit_ratio,
             'buy_tag': trade.enter_tag,
             'enter_tag': trade.enter_tag,
-            'sell_reason': trade.exit_reason,  # Deprecated
             'exit_reason': trade.exit_reason,
             'open_date': trade.open_date_utc,
             'close_date': trade.close_date_utc or datetime.now(timezone.utc),
@@ -1865,7 +1859,6 @@ class FreqtradeBot(LoggingMixin):
             'profit_ratio': profit.profit_ratio,
             'buy_tag': trade.enter_tag,
             'enter_tag': trade.enter_tag,
-            'sell_reason': trade.exit_reason,  # Deprecated
             'exit_reason': trade.exit_reason,
             'open_date': trade.open_date,
             'close_date': trade.close_date or datetime.now(timezone.utc),
