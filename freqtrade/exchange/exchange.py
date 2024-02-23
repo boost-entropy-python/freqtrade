@@ -132,7 +132,7 @@ class Exchange:
 
         # Holds candles
         self._klines: Dict[PairWithTimeframe, DataFrame] = {}
-        self._expiring_candle_cache: Dict[str, PeriodicCache] = {}
+        self._expiring_candle_cache: Dict[Tuple[str, int], PeriodicCache] = {}
 
         # Holds all open sell orders for dry_run
         self._dry_run_open_orders: Dict[str, Any] = {}
@@ -2169,18 +2169,18 @@ class Exchange:
         Should only be used for pairlists which need "on time" expirarion, and no longer cache.
         """
 
-        timeframes = [p[1] for p in pairs]
+        timeframes = {p[1] for p in pairs}
         for timeframe in timeframes:
-            if timeframe not in self._expiring_candle_cache:
+            if (timeframe, since_ms) not in self._expiring_candle_cache:
                 timeframe_in_sec = timeframe_to_seconds(timeframe)
                 # Initialise cache
-                self._expiring_candle_cache[timeframe] = PeriodicCache(ttl=timeframe_in_sec,
-                                                                       maxsize=1000)
+                self._expiring_candle_cache[(timeframe, since_ms)] = PeriodicCache(
+                    ttl=timeframe_in_sec, maxsize=1000)
 
         # Get candles from cache
         candles = {
-            c: self._expiring_candle_cache[c[1]].get(c, None) for c in pairs
-            if c in self._expiring_candle_cache[c[1]]
+            c: self._expiring_candle_cache[(c[1], since_ms)].get(c, None) for c in pairs
+            if c in self._expiring_candle_cache[(c[1], since_ms)]
         }
         pairs_to_download = [p for p in pairs if p not in candles]
         if pairs_to_download:
@@ -2188,7 +2188,7 @@ class Exchange:
                 pairs_to_download, since_ms=since_ms, cache=False
             )
             for c, val in candles.items():
-                self._expiring_candle_cache[c[1]][c] = val
+                self._expiring_candle_cache[(c[1], since_ms)][c] = val
         return candles
 
     def _now_is_time_to_refresh(self, pair: str, timeframe: str, candle_type: CandleType) -> bool:
