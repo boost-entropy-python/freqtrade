@@ -37,6 +37,7 @@ from freqtrade.rpc.rpc_types import (ProfitLossStr, RPCCancelMsg, RPCEntryMsg, R
                                      RPCExitMsg, RPCProtectionMsg)
 from freqtrade.strategy.interface import IStrategy
 from freqtrade.strategy.strategy_wrapper import strategy_safe_wrapper
+from freqtrade.util import MeasureTime
 from freqtrade.util.migrations import migrate_binance_futures_names
 from freqtrade.wallets import Wallets
 
@@ -140,6 +141,16 @@ class FreqtradeBot(LoggingMixin):
         # Initialize protections AFTER bot start - otherwise parameters are not loaded.
         self.protections = ProtectionManager(self.config, self.strategy.protections)
 
+        def log_took_too_long(duration: float, time_limit: float):
+            logger.warning(
+                f"Strategy analysis took {duration:.2f}, which is 25% of the timeframe. "
+                "This can lead to delayed orders and missed signals."
+                "Consider either reducing the amount of work your strategy performs "
+                "or reduce the amount of pairs in the Pairlist."
+            )
+
+        self._measure_execution = MeasureTime(log_took_too_long, timeframe_secs * 0.25)
+
     def notify_status(self, msg: str, msg_type=RPCMessageType.STATUS) -> None:
         """
         Public method for users of this class (worker, etc.) to send notifications
@@ -224,7 +235,8 @@ class FreqtradeBot(LoggingMixin):
         strategy_safe_wrapper(self.strategy.bot_loop_start, supress_error=True)(
             current_time=datetime.now(timezone.utc))
 
-        self.strategy.analyze(self.active_pair_whitelist)
+        with self._measure_execution:
+            self.strategy.analyze(self.active_pair_whitelist)
 
         with self._exit_lock:
             # Check for exchange cancellations, timeouts and user requested replace
@@ -278,7 +290,7 @@ class FreqtradeBot(LoggingMixin):
             }
             self.rpc.send_msg(msg)
 
-    def _refresh_active_whitelist(self, trades: List[Trade] = []) -> List[str]:
+    def _refresh_active_whitelist(self, trades: Optional[List[Trade]] = None) -> List[str]:
         """
         Refresh active whitelist from pairlist or edge and extend it with
         pairs that have open trades.

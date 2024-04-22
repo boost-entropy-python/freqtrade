@@ -155,7 +155,7 @@ class RPC:
         }
         return val
 
-    def _rpc_trade_status(self, trade_ids: List[int] = []) -> List[Dict[str, Any]]:
+    def _rpc_trade_status(self, trade_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
         """
         Below follows the RPC backend it is prefixed with rpc_ to raise awareness that it is
         a remotely exposed function
@@ -460,8 +460,11 @@ class RPC:
 
     def _rpc_trade_statistics(
             self, stake_currency: str, fiat_display_currency: str,
-            start_date: datetime = datetime.fromtimestamp(0)) -> Dict[str, Any]:
+            start_date: Optional[datetime] = None) -> Dict[str, Any]:
         """ Returns cumulative profit statistics """
+
+        start_date = datetime.fromtimestamp(0) if start_date is None else start_date
+
         trade_filter = ((Trade.is_open.is_(False) & (Trade.close_date >= start_date)) |
                         Trade.is_open.is_(True))
         trades: Sequence[Trade] = Trade.session.scalars(Trade.get_trades_query(
