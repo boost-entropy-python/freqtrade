@@ -776,6 +776,11 @@ CONF_SCHEMA = {
             "type": ["integer", "number"],
             "minimum": -1,
         },
+        "add_config_files": {
+            "description": "Additional configuration files to load.",
+            "type": "array",
+            "items": {"type": "string"},
+        },
         "orderflow": {
             "description": "Settings related to order flow.",
             "type": "object",
@@ -860,6 +865,14 @@ CONF_SCHEMA = {
                     "type": "array",
                     "items": {"type": "string"},
                     "uniqueItems": True,
+                },
+                "log_responses": {
+                    "description": (
+                        "Log responses from the exchange."
+                        "Useful/required to debug issues with order processing."
+                    ),
+                    "type": "boolean",
+                    "default": False,
                 },
                 "unknown_fee_rate": {
                     "description": "Fee rate for unknown markets.",

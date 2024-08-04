@@ -1118,6 +1118,13 @@
       ],
       "minimum": -1
     },
+    "add_config_files": {
+      "description": "Additional configuration files to load.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "orderflow": {
       "description": "Settings related to order flow.",
       "type": "object",
@@ -1212,6 +1219,11 @@
             "type": "string"
           },
           "uniqueItems": true
+        },
+        "log_responses": {
+          "description": "Log responses from the exchange.Useful/required to debug issues with order processing.",
+          "type": "boolean",
+          "default": false
         },
         "unknown_fee_rate": {
           "description": "Fee rate for unknown markets.",
