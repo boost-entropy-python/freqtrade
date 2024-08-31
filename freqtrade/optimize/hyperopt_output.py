@@ -60,16 +60,20 @@ class HyperoptOutput:
         max_rows: Optional[int] = None
 
         if self._streaming:
-            ts = get_terminal_size()
-            # Get terminal size.
-            # Account for header, borders, and for the progress bar.
-            # This assumes that lines don't wrap.
-            if ts.columns < 148:
-                # If the terminal is too small, we can't display the table properly.
-                # We will halve the number of rows to display.
-                max_rows = -(int(ts.lines / 2) - 6)
-            else:
-                max_rows = -(ts.lines - 6)
+            try:
+                ts = get_terminal_size()
+                # Get terminal size.
+                # Account for header, borders, and for the progress bar.
+                # This assumes that lines don't wrap.
+                if ts.columns < 148:
+                    # If the terminal is too small, we can't display the table properly.
+                    # We will halve the number of rows to display.
+                    max_rows = -(int(ts.lines / 2) - 6)
+                else:
+                    max_rows = -(ts.lines - 6)
+            except OSError:
+                # If we can't get the terminal size, we will just display the last 10 rows.
+                pass
 
         self.__init_table()
         for r in self._results[max_rows:]:
