@@ -2189,6 +2189,22 @@ def test_api_exchanges(botclient):
     }
 
 
+def test_list_hyperoptloss(botclient, tmp_path):
+    ftbot, client = botclient
+    ftbot.config["user_data_dir"] = tmp_path
+
+    rc = client_get(client, f"{BASE_URI}/hyperoptloss")
+    assert_response(rc)
+    response = rc.json()
+    assert isinstance(response["loss_functions"], list)
+    assert len(response["loss_functions"]) > 0
+
+    sharpeloss = [r for r in response["loss_functions"] if r["name"] == "SharpeHyperOptLoss"]
+    assert len(sharpeloss) == 1
+    assert "Sharpe Ratio calculation" in sharpeloss[0]["description"]
+    assert len([r for r in response["loss_functions"] if r["name"] == "SortinoHyperOptLoss"]) == 1
+
+
 def test_api_freqaimodels(botclient, tmp_path, mocker):
     ftbot, client = botclient
     ftbot.config["user_data_dir"] = tmp_path
@@ -2339,9 +2355,7 @@ def test_api_pairlists_evaluate(botclient, tmp_path, mocker):
     ]
     assert response["result"]["length"] == 2
     # Patch __run_pairlists
-    plm = mocker.patch(
-        "freqtrade.rpc.api_server.api_background_tasks.__run_pairlist", return_value=None
-    )
+    plm = mocker.patch("freqtrade.rpc.api_server.api_pairlists.__run_pairlist", return_value=None)
     body = {
         "pairlists": [
             {
