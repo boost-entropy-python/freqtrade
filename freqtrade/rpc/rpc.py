@@ -32,7 +32,6 @@ from freqtrade.enums import (
 )
 from freqtrade.exceptions import ExchangeError, PricingError
 from freqtrade.exchange import timeframe_to_minutes, timeframe_to_msecs
-from freqtrade.exchange.exchange_types import Ticker, Tickers
 from freqtrade.exchange.exchange_utils import price_to_precision
 from freqtrade.loggers import bufferHandler
 from freqtrade.persistence import KeyStoreKeys, KeyValueStore, PairLocks, Trade
@@ -687,25 +686,12 @@ class RPC:
             est_bot_stake = amount
         else:
             try:
-                tickers: Tickers = self._freqtrade.exchange.get_tickers(cached=True)
-                pair = self._freqtrade.exchange.get_valid_pair_combination(coin, stake_currency)
-                ticker: Ticker | None = tickers.get(pair, None)
-                if not ticker:
-                    tickers_spot: Tickers = self._freqtrade.exchange.get_tickers(
-                        cached=True,
-                        market_type=TradingMode.SPOT
-                        if self._config.get("trading_mode", TradingMode.SPOT) != TradingMode.SPOT
-                        else TradingMode.FUTURES,
-                    )
-                    ticker = tickers_spot.get(pair, None)
-
-                if ticker:
-                    rate: float | None = ticker.get("last", None)
-                    if rate:
-                        if pair.startswith(stake_currency) and not pair.endswith(stake_currency):
-                            rate = 1.0 / rate
-                        est_stake = rate * balance.total
-                        est_bot_stake = rate * amount
+                rate: float | None = self._freqtrade.exchange.get_conversion_rate(
+                    coin, stake_currency
+                )
+                if rate:
+                    est_stake = rate * balance.total
+                    est_bot_stake = rate * amount
 
                 return est_stake, est_bot_stake
             except (ExchangeError, PricingError) as e:
