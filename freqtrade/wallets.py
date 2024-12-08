@@ -124,32 +124,20 @@ class Wallets:
                     pending,
                     trade.amount + curr_wallet_bal,
                 )
-
-            current_stake = (
-                self._start_cap.get(self._stake_currency, 0) + tot_profit - tot_in_trades
-            )
-            total_stake = current_stake + used_stake
         else:
-            tot_in_trades = 0
             for position in open_trades:
-                # size = self._exchange._contracts_to_amount(position.pair, position['contracts'])
-                size = position.amount
-                collateral = position.stake_amount
-                leverage = position.leverage
-                tot_in_trades += collateral
                 _positions[position.pair] = PositionWallet(
                     position.pair,
-                    position=size,
-                    leverage=leverage,
-                    collateral=collateral,
+                    position=position.amount,
+                    leverage=position.leverage,
+                    collateral=position.stake_amount,
                     side=position.trade_direction,
                 )
-            current_stake = (
-                self._start_cap.get(self._stake_currency, 0) + tot_profit - tot_in_trades
-            )
 
             used_stake = tot_in_trades
-            total_stake = current_stake + tot_in_trades
+
+        current_stake = self._start_cap.get(self._stake_currency, 0) + tot_profit - tot_in_trades
+        total_stake = current_stake + used_stake
 
         _wallets[self._stake_currency] = Wallet(
             currency=self._stake_currency,
@@ -339,7 +327,7 @@ class Wallets:
                 f"lower than stake amount ({stake_amount} {self._config['stake_currency']})"
             )
 
-        return stake_amount
+        return max(stake_amount, 0)
 
     def get_trade_stake_amount(
         self, pair: str, max_open_trades: IntOrInf, edge=None, update: bool = True
