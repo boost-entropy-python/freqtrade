@@ -136,18 +136,27 @@ class Wallets:
 
             used_stake = tot_in_trades
 
+        cross_margin = 0.0
+        if self._config.get("margin_mode") == "cross":
+            # In cross-margin mode, the total balance is used as collateral.
+            for curr, bal in self._start_cap.items():
+                if curr == self._stake_currency:
+                    continue
+                rate = self._exchange.get_conversion_rate(curr, self._stake_currency)
+                if rate:
+                    cross_margin += bal * rate
+
         current_stake = self._start_cap.get(self._stake_currency, 0) + tot_profit - tot_in_trades
         total_stake = current_stake + used_stake
 
         _wallets[self._stake_currency] = Wallet(
             currency=self._stake_currency,
-            free=current_stake,
+            free=current_stake + cross_margin,
             used=used_stake,
             total=total_stake,
         )
-        for currency in self._start_cap:
+        for currency, bal in self._start_cap.items():
             if currency not in _wallets:
-                bal = self._start_cap[currency]
                 _wallets[currency] = Wallet(currency, bal, 0, bal)
 
         self._wallets = _wallets
