@@ -1412,6 +1412,33 @@ class Backtesting:
             return exiting_dir
         return None
 
+    def get_detail_data(self, pair: str, row: tuple) -> DataFrame | None:
+        """
+        Spread into detail data
+        """
+        current_detail_time: datetime = row[DATE_IDX].to_pydatetime()
+        exit_candle_end = current_detail_time + self.timeframe_td
+        detail_data = self.detail_data[pair]
+        detail_data = detail_data.loc[
+            (detail_data["date"] >= current_detail_time) & (detail_data["date"] < exit_candle_end)
+        ].copy()
+
+        if len(detail_data) == 0:
+            return None
+        detail_data.loc[:, "enter_long"] = row[LONG_IDX]
+        detail_data.loc[:, "exit_long"] = row[ELONG_IDX]
+        detail_data.loc[:, "enter_short"] = row[SHORT_IDX]
+        detail_data.loc[:, "exit_short"] = row[ESHORT_IDX]
+        detail_data.loc[:, "enter_tag"] = row[ENTER_TAG_IDX]
+        detail_data.loc[:, "exit_tag"] = row[EXIT_TAG_IDX]
+        return detail_data
+
+    def time_generator(self, start_date: datetime, end_date: datetime):
+        current_time = start_date + self.timeframe_td
+        while current_time <= end_date:
+            yield current_time
+            current_time += self.timeframe_td
+
     def time_pair_generator(
         self, start_date: datetime, end_date: datetime, increment: timedelta, pairs: list[str]
     ):
@@ -1424,17 +1451,25 @@ class Backtesting:
         self.progress.init_step(
             BacktestState.BACKTEST, int((end_date - start_date) / self.timeframe_td)
         )
-        while current_time <= end_date:
-            is_first = True
+        for current_time in self.time_generator(start_date, end_date):
+            # Loop for each time point.
+
+            self.check_abort()
+            # Reset open trade count for this candle
+            # Critical to avoid exceeding max_open_trades in backtesting
+            # when timeframe-detail is used and trades close within the opening candle.
+            LocalTrade.bt_open_open_trade_count_candle = LocalTrade.bt_open_open_trade_count
+            strategy_safe_wrapper(self.strategy.bot_loop_start, supress_error=True)(
+                current_time=current_time
+            )
+
             # Pairs that have open trades should be processed first
             new_pairlist = list(dict.fromkeys([t.pair for t in LocalTrade.bt_trades_open] + pairs))
 
             for pair in new_pairlist:
-                yield current_time, pair, is_first
-                is_first = False
+                yield current_time, pair
 
             self.progress.increment()
-            current_time += increment
 
     def backtest(self, processed: dict, start_date: datetime, end_date: datetime) -> dict[str, Any]:
         """
@@ -1461,18 +1496,9 @@ class Backtesting:
         indexes: dict = defaultdict(int)
 
         # Loop timerange and get candle for each pair at that point in time
-        for current_time, pair, is_first_call in self.time_pair_generator(
+        for current_time, pair in self.time_pair_generator(
             start_date, end_date, self.timeframe_td, list(data.keys())
         ):
-            if is_first_call:
-                self.check_abort()
-                # Reset open trade count for this candle
-                # Critical to avoid exceeding max_open_trades in backtesting
-                # when timeframe-detail is used and trades close within the opening candle.
-                LocalTrade.bt_open_open_trade_count_candle = LocalTrade.bt_open_open_trade_count
-                strategy_safe_wrapper(self.strategy.bot_loop_start, supress_error=True)(
-                    current_time=current_time
-                )
             row_index = indexes[pair]
             row = self.validate_row(data, pair, row_index, current_time)
             if not row:
@@ -1483,7 +1509,6 @@ class Backtesting:
             is_last_row = current_time == end_date
             self.dataprovider._set_dataframe_max_index(self.required_startup + row_index)
             self.dataprovider._set_dataframe_max_date(current_time)
-            current_detail_time: datetime = row[DATE_IDX].to_pydatetime()
             trade_dir: LongShort | None = self.check_for_trade_entry(row)
 
             pair_has_open_trades = len(LocalTrade.bt_trades_open_pp[pair]) > 0
@@ -1495,24 +1520,13 @@ class Backtesting:
                 # Spread out into detail timeframe.
                 # Should only happen when we are either in a trade for this pair
                 # or when we got the signal for a new trade.
-                exit_candle_end = current_detail_time + self.timeframe_td
+                detail_data = self.get_detail_data(pair, row)
 
-                detail_data = self.detail_data[pair]
-                detail_data = detail_data.loc[
-                    (detail_data["date"] >= current_detail_time)
-                    & (detail_data["date"] < exit_candle_end)
-                ].copy()
-                if len(detail_data) == 0:
+                if detail_data is None or len(detail_data) == 0:
                     # Fall back to "regular" data if no detail data was found for this candle
                     self.dataprovider._set_dataframe_max_date(current_time)
                     self.backtest_loop(row, pair, current_time, trade_dir, not is_last_row)
                     continue
-                detail_data.loc[:, "enter_long"] = row[LONG_IDX]
-                detail_data.loc[:, "exit_long"] = row[ELONG_IDX]
-                detail_data.loc[:, "enter_short"] = row[SHORT_IDX]
-                detail_data.loc[:, "exit_short"] = row[ESHORT_IDX]
-                detail_data.loc[:, "enter_tag"] = row[ENTER_TAG_IDX]
-                detail_data.loc[:, "exit_tag"] = row[EXIT_TAG_IDX]
                 is_first = True
                 current_time_det = current_time
                 for det_row in detail_data[HEADERS].values.tolist():
