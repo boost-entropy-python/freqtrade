@@ -4,7 +4,7 @@ bottleneck==1.4.2
 numexpr==2.10.2
 pandas-ta==0.3.14b
 
-ccxt==4.4.73
+ccxt==4.4.75
 cryptography==44.0.2
 aiohttp==3.9.5
 SQLAlchemy==2.0.40
@@ -38,8 +38,8 @@ sdnotify==0.3.2
 
 # API Server
 fastapi==0.115.12
-pydantic==2.11.2
-uvicorn==0.34.0
+pydantic==2.11.3
+uvicorn==0.34.1
 pyjwt==2.10.1
 aiofiles==24.1.0
 psutil==7.0.0
