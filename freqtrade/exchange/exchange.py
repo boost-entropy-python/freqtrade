@@ -1790,9 +1790,11 @@ class Exchange:
         if (limit := self._ft_has.get("fetch_orders_limit_minutes")) is not None:
             orders = []
             while since < dt_now():
-                until = since + timedelta(minutes=limit - 1)
-                orders += self._fetch_orders(pair, since, params={"until": dt_ts(until)})
-                since = until
+                orders += self._fetch_orders(pair, since)
+                # Since with 1 minute overlap
+                since = since + timedelta(minutes=limit - 1)
+            # Ensure each order is unique based on order id
+            orders = list({order["id"]: order for order in orders}.values())
             return orders
 
         else:
