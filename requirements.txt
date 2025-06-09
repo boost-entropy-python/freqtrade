@@ -1,12 +1,12 @@
 numpy==2.2.6
-pandas==2.2.3
+pandas==2.3.0
 bottleneck==1.4.2
 numexpr==2.10.2
 ft-pandas-ta==0.3.15
 
-ccxt==4.4.87
+ccxt==4.4.88
 cryptography==45.0.3
-aiohttp==3.12.6
+aiohttp==3.12.11
 SQLAlchemy==2.0.41
 python-telegram-bot==22.1
 # can't be hard-pinned due to telegram-bot pinning httpx with ~
