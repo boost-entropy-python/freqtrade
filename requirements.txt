@@ -7,7 +7,7 @@ ft-pandas-ta==0.3.16
 ta-lib==0.6.8
 technical==1.5.3
 
-ccxt==4.5.12
+ccxt==4.5.14
 cryptography==46.0.3
 aiohttp==3.13.2
 SQLAlchemy==2.0.44
@@ -25,9 +25,8 @@ pycoingecko==3.2.0
 jinja2==3.1.6
 joblib==1.5.2
 rich==14.2.0
-pyarrow==21.0.0; platform_machine != 'armv7l' and platform_machine != "aarch64"
-# TODO: downgrade for aarch64 until https://github.com/apache/arrow/issues/47229 is resolved
-pyarrow==20.0.0;  platform_machine == "aarch64"
+pyarrow==22.0.0; platform_machine != 'armv7l'
+
 
 # Load ticker files 30% faster
 python-rapidjson==1.22
