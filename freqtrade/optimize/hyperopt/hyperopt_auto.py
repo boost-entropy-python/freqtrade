@@ -62,25 +62,23 @@ class HyperOptAuto(IHyperOpt):
         else:
             return default_func
 
-    def _generate_indicator_space(self, category):
-        for attr_name, attr in self.strategy.enumerate_parameters(category):
-            if attr.optimize:
-                yield attr.get_space(attr_name)
-
     def get_indicator_space(
-        self, category: Literal["buy", "sell", "enter", "exit", "protection"] | str
+        self, space: Literal["buy", "sell", "enter", "exit", "protection"] | str
     ) -> list:
         """
         Get indicator space for a given space.
-        :param category: parameter space to get.
+        :param space: parameter space to get.
         """
-        # TODO: is this necessary, or can we call "generate_space" directly?
-        indicator_space = list(self._generate_indicator_space(category))
+        indicator_space = [
+            attr.get_space(attr_name)
+            for attr_name, attr in self.strategy.enumerate_parameters(space)
+            if attr.optimize
+        ]
         if len(indicator_space) > 0:
             return indicator_space
         else:
             _format_exception_message(
-                category, self.config.get("hyperopt_ignore_missing_space", False)
+                space, self.config.get("hyperopt_ignore_missing_space", False)
             )
             return []
 
