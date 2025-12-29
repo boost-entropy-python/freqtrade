@@ -1,4 +1,4 @@
-numpy==2.3.5
+numpy==2.4.0
 pandas==2.3.3
 bottleneck==1.6.0
 numexpr==2.14.1
@@ -14,7 +14,7 @@ SQLAlchemy==2.0.45
 python-telegram-bot==22.5
 # can't be hard-pinned due to telegram-bot pinning httpx with ~
 httpx>=0.24.1
-humanize==4.14.0
+humanize==4.15.0
 cachetools==6.2.4
 requests==2.32.5
 urllib3==2.6.2
