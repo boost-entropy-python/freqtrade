@@ -10,12 +10,16 @@ from freqtrade.constants import BACKTEST_BREAKDOWNS, DATETIME_PRINT_FORMAT
 from freqtrade.data.metrics import (
     calculate_cagr,
     calculate_calmar,
+    calculate_calmar_from_balance,
     calculate_csum,
     calculate_expectancy,
     calculate_market_change,
     calculate_max_drawdown,
+    calculate_max_drawdown_from_balance,
     calculate_sharpe,
+    calculate_sharpe_from_balance,
     calculate_sortino,
+    calculate_sortino_from_balance,
     calculate_sqn,
 )
 from freqtrade.ft_types import (
@@ -59,15 +63,61 @@ def generate_wallet_stats(wallet_df: DataFrame, stake_currency: str) -> dict[str
     low_balance = total_quote.loc[low_idx]
     low_date = wallet.loc[low_idx, "date"]
     high_date = wallet.loc[high_idx, "date"]
+    sharpe = calculate_sharpe_from_balance(wallet)
+    sortino = calculate_sortino_from_balance(wallet)
+    calmar = calculate_calmar_from_balance(wallet)
+    try:
+        drawdown = calculate_max_drawdown_from_balance(wallet)
+        # max_relative_drawdown = Underwater
+        drawdown_duration = drawdown.low_date - drawdown.high_date
+
+    except ValueError:
+        drawdown = None
+        drawdown_duration = timedelta()
+    try:
+        underwater = calculate_max_drawdown_from_balance(wallet, relative=True)
+    except ValueError:
+        underwater = None
     return {
         "start_balance": start_balance,
         "end_balance": end_balance,
         "high_balance": high_balance,
         "low_balance": low_balance,
+        "sharpe": sharpe,
+        "sortino": sortino,
+        "calmar": calmar,
         "low_date": low_date.strftime(DATETIME_PRINT_FORMAT),
         "low_ts": int(low_date.timestamp() * 1000),
         "high_date": high_date.strftime(DATETIME_PRINT_FORMAT),
         "high_ts": int(high_date.timestamp() * 1000),
+        # Drawdown metrics
+        "max_drawdown_account": drawdown.relative_account_drawdown if drawdown else 0.0,
+        "max_relative_drawdown": underwater.relative_account_drawdown if underwater else 0.0,
+        "max_drawdown_abs": drawdown.drawdown_abs if drawdown else 0.0,
+        "drawdown_start": (
+            drawdown.high_date.strftime(DATETIME_PRINT_FORMAT)
+            if drawdown and drawdown.high_date is not None
+            else None
+        ),
+        "drawdown_start_ts": (
+            int(drawdown.high_date.timestamp() * 1000)
+            if drawdown and drawdown.high_date is not None
+            else None
+        ),
+        "drawdown_end": (
+            drawdown.low_date.strftime(DATETIME_PRINT_FORMAT)
+            if drawdown and drawdown.low_date is not None
+            else None
+        ),
+        "drawdown_end_ts": (
+            int(drawdown.low_date.timestamp() * 1000)
+            if drawdown and drawdown.low_date is not None
+            else None
+        ),
+        "drawdown_duration": drawdown_duration,
+        "drawdown_duration_s": drawdown_duration.total_seconds(),
+        "max_drawdown_low": drawdown.low_value if drawdown else 0.0,
+        "max_drawdown_high": drawdown.high_value if drawdown else 0.0,
     }
 
 
