@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import time
 from copy import deepcopy
 from functools import partial
 from threading import Thread
@@ -31,15 +30,21 @@ class ExchangeWS:
         self.klines_last_request: dict[PairWithTimeframe, float] = {}
         self._thread = Thread(name="ccxt_ws", target=self._start_forever)
         self._thread.start()
-        self.__cleanup_called = False
 
     def _start_forever(self) -> None:
         self._loop = asyncio.new_event_loop()
         try:
             self._loop.run_forever()
         finally:
-            if self._loop.is_running():
-                self._loop.stop()
+            if not self._loop.is_closed():
+                # Cancel remaining tasks and close the loop in the owning thread.
+                pending = asyncio.all_tasks(self._loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+                self._loop.close()
 
     def cleanup(self) -> None:
         logger.debug("Cleanup called - stopping")
@@ -47,26 +52,26 @@ class ExchangeWS:
         for task in self._background_tasks:
             task.cancel()
         if hasattr(self, "_loop") and not self._loop.is_closed():
-            self.reset_connections()
-
+            self.reset_connections(cleanup=True)
             self._loop.call_soon_threadsafe(self._loop.stop)
-            time.sleep(0.1)
-            if not self._loop.is_closed():
-                self._loop.close()
-
-        self._thread.join()
+        self._thread.join(timeout=5)
+        if self._thread.is_alive():
+            logger.warning("Websocket loop thread did not stop within timeout.")
         logger.debug("Stopped")
 
-    def reset_connections(self) -> None:
+    def reset_connections(self, cleanup: bool = False) -> None:
         """
         Reset all connections - avoids "connection-reset" errors that happen after ~9 days
         """
         if hasattr(self, "_loop") and not self._loop.is_closed():
-            logger.info("Resetting WS connections.")
-            asyncio.run_coroutine_threadsafe(self._cleanup_async(), loop=self._loop)
-            while not self.__cleanup_called:
-                time.sleep(0.1)
-        self.__cleanup_called = False
+            logger.info(f"{'Cleaning up' if cleanup else 'Resetting'} exchange WS connections.")
+            try:
+                fut = asyncio.run_coroutine_threadsafe(self._cleanup_async(), loop=self._loop)
+                fut.result(timeout=10)
+            except TimeoutError:
+                logger.warning("Timed out while resetting websocket connections.")
+            except Exception:
+                logger.exception("Exception while resetting websocket connections")
 
     async def _cleanup_async(self) -> None:
         try:
@@ -76,8 +81,6 @@ class ExchangeWS:
             self._ccxt_object.ohlcvs.clear()
         except Exception:
             logger.exception("Exception in _cleanup_async")
-        finally:
-            self.__cleanup_called = True
 
     def _pop_history(self, paircomb: PairWithTimeframe) -> None:
         """
@@ -145,27 +148,36 @@ class ExchangeWS:
         except ccxt.NotSupported as e:
             logger.debug("un_watch_ohlcv_for_symbols not supported: %s", e)
             pass
+        except ccxt.NetworkError as e:
+            # Network errors are common on shutdown so we can ignore them.
+            # It's a network error - which most likely means that the connection is already closed.
+            logger.debug("Network error during unwatch for %s, %s: %s", pair, timeframe, e)
         except Exception:
-            logger.exception("Exception in _unwatch_ohlcv")
+            logger.exception(f"Exception in _unwatch_ohlcv for {pair}, {timeframe},")
 
     def _continuous_stopped(
         self, task: asyncio.Task, pair: str, timeframe: str, candle_type: CandleType
-    ):
+    ) -> None:
         self._background_tasks.discard(task)
         result = "done"
-        if task.cancelled():
-            result = "cancelled"
-        else:
-            if (result1 := task.result()) is not None:
-                result = str(result1)
+        try:
+            if task.cancelled():
+                result = "cancelled"
+            else:
+                if (result1 := task.result()) is not None:
+                    result = str(result1)
+        except Exception:
+            result = "error"
+            logger.exception(f"Unhandled exception in watch task callback for {pair}, {timeframe}")
+        finally:
+            logger.info(f"{pair}, {timeframe}, {candle_type} - Task finished - {result}")
+            if hasattr(self, "_loop") and not self._loop.is_closed():
+                asyncio.run_coroutine_threadsafe(
+                    self._unwatch_ohlcv(pair, timeframe, candle_type), loop=self._loop
+                )
 
-        logger.info(f"{pair}, {timeframe}, {candle_type} - Task finished - {result}")
-        asyncio.run_coroutine_threadsafe(
-            self._unwatch_ohlcv(pair, timeframe, candle_type), loop=self._loop
-        )
-
-        self._klines_scheduled.discard((pair, timeframe, candle_type))
-        self._pop_history((pair, timeframe, candle_type))
+            self._klines_scheduled.discard((pair, timeframe, candle_type))
+            self._pop_history((pair, timeframe, candle_type))
 
     async def _continuously_async_watch_ohlcv(
         self, pair: str, timeframe: str, candle_type: CandleType
