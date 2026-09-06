@@ -105,6 +105,23 @@ def test_process_calls_sendmsg(mocker, default_conf_usdt) -> None:
     assert freqtrade.rpc.process_msg_queue.call_count == 1
 
 
+def test_process_scheduled_job_error(mocker, default_conf_usdt, caplog) -> None:
+    # Unexpected errors in scheduled jobs (e.g. the daily wallet snapshot) must not
+    # bring down the bot.
+    mocker.patch(
+        "freqtrade.wallets.Wallets.record_wallet_state",
+        side_effect=AttributeError("'str' object has no attribute 'keys'"),
+    )
+    freqtrade = get_patched_freqtradebot(mocker, default_conf_usdt)
+    # Make all jobs due
+    for job in freqtrade._schedule.jobs:
+        job.next_run = dt_now().replace(tzinfo=None) - timedelta(seconds=1)
+
+    freqtrade.process()
+    assert log_has_re(r"Error in scheduled job .*record_wallet_state.*", caplog)
+    assert freqtrade.rpc.process_msg_queue.call_count == 1
+
+
 def test_bot_cleanup(mocker, default_conf_usdt, caplog) -> None:
     mock_cleanup = mocker.patch("freqtrade.freqtradebot.Trade.commit")
     coo_mock = mocker.patch("freqtrade.freqtradebot.FreqtradeBot.cancel_all_open_orders")
